@@ -36,6 +36,8 @@
 */
 #define _CRT_SECURE_NO_WARNINGS
 
+#pragma warning(disable:4189) /* local variable is initialized but not referenced */
+
 #include <stdio.h> 
 #include <stdlib.h> 
 #include <stdbool.h> 
@@ -117,13 +119,11 @@ void** FindFreePtr(void** rgLibraryPtr) {
 
 int main(int argc, char** argv)
 {
-    int i INITINT_T, \
-        j INITINT_T, \
-        k INITINT_T, \
-        l INITINT_T;
+    int nRet INITINT_T, \
+        k   INITINT_T, \
+        l   INITINT_T;
     bool fVSBuild = NULL != getenv("VSSKUEDITION");     // depends on existance of VSSKUEDITION environment variable
                                                         // that is available only if building with Visual Studio
-    int nRet;
     int fargc;
     char** fargv = malloc(sizeof(void*) * ARGV_MAX);    // allocate buffer for 512 parameter
     char* pszMnt = NULL;
@@ -164,10 +164,9 @@ int main(int argc, char** argv)
     {
         static char    FName[512];
         unsigned lenFName = sizeof(FName);
-        unsigned nRet;
         HMODULE hModule = NULL;
 
-        nRet = GetModuleFileNameA(hModule, FName, lenFName);
+        GetModuleFileNameA(hModule, FName, lenFName);
         argv[0] = &FName[0];
     }
 
@@ -195,7 +194,7 @@ int main(int argc, char** argv)
     if (NULL != stCommParm.pszCmdLineFile) {
 
         FILE* fp = fopen(stCommParm.pszCmdLineFile, "r");
-        size_t fsize = -1, num;
+        size_t fsize = (size_t)-1, num;
         char* pzsFCmdLine;
 
         //
