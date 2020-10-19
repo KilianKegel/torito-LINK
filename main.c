@@ -37,7 +37,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #pragma warning(disable:4189) /* local variable is initialized but not referenced */
-
+#pragma warning(disable:4706) /* assignment within conditional expression */
 #include <stdio.h> 
 #include <stdlib.h> 
 #include <stdbool.h> 
