@@ -117,11 +117,23 @@ void** FindFreePtr(void** rgLibraryPtr) {
     return &rgLibraryPtr[i];
 }
 
-int main(int argc, char** argv)
+/**
+
+Synopsis
+    int main(int argc, char **argv);
+Description
+    LINK Hook.
+    Check, if SUBSYSTEM:POSIX is selected and than translate LINK.exe parameter
+    to "GNU ld" corresponding parameter and invoke "wsl ld" command.
+    For all other SUBSYSTEMS call the real Microsoft LINK.exe
+Returns
+    real return value of LINK.exe or "GNU ld"
+
+**/int main(int argc, char** argv)
 {
-    int nRet INITINT_T, \
-        k   INITINT_T, \
-        l   INITINT_T;
+    int nRet    INITINT_T, \
+        k       INITINT_T, \
+        l       INITINT_T;
     bool fVSBuild = NULL != getenv("VSSKUEDITION");     // depends on existance of VSSKUEDITION environment variable
                                                         // that is available only if building with Visual Studio
     int fargc;
