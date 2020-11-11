@@ -19,3 +19,4 @@ This requires that the build machine is installed with WSL2 (Windows Subsystem L
 
 ## Revision history
 ### 20201111
+* alpha v0.5
