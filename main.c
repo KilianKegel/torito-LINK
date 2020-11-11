@@ -17,16 +17,6 @@
 
 @section howto_sec HowTo
 
-    1. find all LINK.EXE from VS2019, usually found here:
-        "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.26.28801\bin\Hostx64\x64\link.exe"
-        "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.26.28801\bin\Hostx64\x86\link.exe"
-        "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.26.28801\bin\Hostx86\x64\link.exe"
-        "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.26.28801\bin\Hostx86\x86\link.exe"
-
-    2. rename this LINK.EXE to LINK_ORG.EXE keeping the location / path
-
-    3. copy the LINKLD.EXE to this location / path each and rename it to LINK.EXE
-
 @file LinkLd.c
 
 @todo
@@ -38,6 +28,7 @@
 
 #pragma warning(disable:4189) /* local variable is initialized but not referenced */
 #pragma warning(disable:4706) /* assignment within conditional expression */
+
 #include <stdio.h> 
 #include <stdlib.h> 
 #include <stdbool.h> 
@@ -56,7 +47,12 @@ typedef struct _CMDLINE_AND_FILE_PARAMETER
     bool fScriptCreated;
     bool fHelp;                                             // /? -? /h -h ...
     size_t sizeWin, sizeLnx, sizeLib, sizeScr, sizeObj;     //
-    char* pParmWin, * pCmdObj, * pCmdLnx, * pCmdScr, * pCmdLib;    // NOTE:    GNU LD can use windows .LIB without any "--library" .so .a version 
+    char* pParmWin, 
+        * pParmFil, /* the command file appended with @*/
+        * pCmdObj, 
+        * pCmdLnx, 
+        * pCmdScr, 
+        * pCmdLib;    // NOTE:    GNU LD can use windows .LIB without any "--library" .so .a version 
                                                             //          number magic just by appending all library files AFTER the .OBJ files
     char* pszCmdLineFile;
     char* rgLibPathPtr[512];
@@ -96,17 +92,20 @@ static struct _PARMSUBSTTYPE1 {
 char ld_script[];// GNU ld link script including MSFT specific section sequence for .CRT$...
 char* Rel2AbsPath(const char* pstrRel, const char* pstrAbs, bool fBack2Slashes, bool fDrv2Mnt);
 int Str2Argcv(char** argv, char* szCmdline);
-int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER* pstCommParm);
+int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER* pstCommParm,bool fCmdFile);
 
 
 #define LOWCASE(L) (('a' - 'A') | L)
 #define ARGV_MAX 1024
 #define EOS '\0'
 #define EOSSIZE 1/*sizeof("");*/
+#define ASCIICHRSPACE 0x20
+#define ASCIISTRSPACE " "
 
 #define INITPTR_T   = NULL
 #define INITSIZE_T  = 0
 #define INITINT_T   = 0
+#define INITBOOL_T  = 0
 
 void** FindFreePtr(void** rgLibraryPtr) {
     int i = 0;
@@ -129,7 +128,7 @@ Description
 Returns
     real return value of LINK.exe or "GNU ld"
 
-**/int main(int argc, char** argv)
+**/int main(int argc, char** argv, char **env)
 {
     int nRet    INITINT_T, \
         k       INITINT_T, \
@@ -151,7 +150,8 @@ Returns
     stCommParm.sizeLib = 1;
     stCommParm.sizeScr = 1;
     stCommParm.sizeObj = 1;
-    stCommParm.pParmWin = calloc(1,1);
+    stCommParm.pParmWin = calloc(1, 1);
+    stCommParm.pParmFil = calloc(1, 1);
     stCommParm.pCmdObj  = calloc(1,1);
     stCommParm.pCmdLnx  = calloc(1,1);
     stCommParm.pCmdScr  = calloc(1,1);
@@ -162,11 +162,21 @@ Returns
     /////////////////////////////////////////////
     // prerequisite
     /////////////////////////////////////////////
-    if (0)
+    if (0)  // 1 - enable DEAD loop for debug purpose only
     {
         volatile int x = 0;
         while (0 == x)
             ;
+    }
+
+    //
+    // print entire environment
+    //
+    if (0)
+    {
+        int i;
+        for (i = 0; NULL != env[i]; i++)
+            fprintf(stCommParm.msgout, "line %d -> %s\n", __LINE__, env[i]);
     }
 
     // 2. get full drive and path name of this LINK.EXE hook
@@ -190,6 +200,7 @@ Returns
     strcpy(stCommParm.pCmdLnx, LD_CMD_LINE_INITIAL);
 
     stCommParm.sizeWin = EOSSIZE + strlen(stCommParm.pParmWin);
+//    stCommParm.sizeFil = EOSSIZE + strlen(stCommParm.pParmFil);
     stCommParm.sizeLnx = EOSSIZE + strlen(stCommParm.pCmdLnx);
     stCommParm.sizeLib = EOSSIZE + strlen(stCommParm.pCmdLib);
     stCommParm.sizeObj = EOSSIZE + strlen(stCommParm.pCmdObj);
@@ -198,16 +209,30 @@ Returns
     ///////////////////////////////////////////////////////////////////////
     // process the real command LINE
     ///////////////////////////////////////////////////////////////////////
-    ProcessArgs(argc, argv, &stCommParm);
+    ProcessArgs(argc, argv, &stCommParm,/*fCmdFile*/ false);
 
     ///////////////////////////////////////////////////////////////////////
     // process the command FILE appended with "@"
     ///////////////////////////////////////////////////////////////////////
     if (NULL != stCommParm.pszCmdLineFile) {
 
-        FILE* fp = fopen(stCommParm.pszCmdLineFile, "r");
+        FILE* fp = fopen(stCommParm.pszCmdLineFile, "rb");
         size_t fsize = (size_t)-1, num;
         char* pzsFCmdLine;
+        
+        if (1)
+        {
+            FILE* fpwcp = fopen("C:\\Users\\kilia\\AppData\\Local\\Temp\\lnkcmdw.txt", "wb");    //kgtest; //fp wide copy
+            int c;
+            //
+            // save a copy of the original file (UNICODE)
+            //
+            while (EOF != (c = getc(fp)))
+                putc(c,fpwcp);
+            fclose(fpwcp);
+        }
+
+        fp = fopen(stCommParm.pszCmdLineFile, "r");
 
         //
         // get the comand file to memory, NOTE: IT IS UTF-16
@@ -217,22 +242,27 @@ Returns
         fseek(fp, 0, SEEK_SET);
 
         pzsFCmdLine = malloc(fsize);
-        num = fread(pzsFCmdLine, fsize, 1, fp);
+        num = fread(pzsFCmdLine, 1, fsize, fp);
 
         //
         // this file is UTF-16, convert it to ASCII
         //
-        for (k = 2/* 2 -> skip BOM Byte Order Mark */, l = 0; k < (int)fsize; l++, k += 2) {
+        for (k = 2/* 2 -> skip BOM Byte Order Mark */, l = 0; k < (int)num; l++, k += 2) {
             pzsFCmdLine[l] = pzsFCmdLine[k];
         }
         pzsFCmdLine[l] = '\0';
 
+        fp = fopen("C:\\Users\\kilia\\AppData\\Local\\Temp\\lnkcmd.txt", "w");    //kgtest
+        num = fwrite(pzsFCmdLine, 1, num/2, fp);
+        fclose(fp);
+
+        
         fargc = Str2Argcv(fargv, pzsFCmdLine);
         
-        ProcessArgs(fargc, fargv, &stCommParm);
+        ProcessArgs(fargc, fargv, &stCommParm,/*fCmdFile*/ true);
 
     }
-
+    //__debugbreak();
     if (1 == stCommParm.fPARMNologo)
     {
         fprintf(stCommParm.msgout, "Torito LINK -- Microsoft (R) LINK.EXE hook for GNU \"ld\"\n  See https://github.com/KilianKegel/torito-C-Library for details.\n");
@@ -243,13 +273,15 @@ Returns
         stCommParm.fLinuxLd = false;
         fprintf(stCommParm.msgout, "Torito LINK -- Microsoft (R) LINK.EXE hook for GNU \"ld\"\n  See https://github.com/KilianKegel/torito-C-Library for details.\n");
     }
-    while (stCommParm.fLinuxLd)
+
+    if(stCommParm.fLinuxLd) do
     {
         unsigned u;
         char* pMap = NULL;
         //
         // 1. check, that WSL is installed on the build machine
         //
+        fprintf(stderr, "line %d -->Linux build\n",__LINE__);
         if (1)
         {
             char* pTmpName = malloc(1024);
@@ -279,6 +311,7 @@ Returns
                 exit(2);
             }
         }
+        /*
         //
         // necessarily a MAP file is needed to find uninitialized variables in .BSS
         //
@@ -289,7 +322,7 @@ Returns
                     u = UINT_MAX;
                 break;//for (u = 0; u < sizeof(parmsubstT1) / sizeof(parmsubstT1[0]); u++)
             }
-
+        */
         //
         // try to assign libraries to it's matching library search path, LD doesn't support library-path for *.lib
         //
@@ -366,176 +399,252 @@ Returns
         strcat(stCommParm.pCmdLnx, stCommParm.pCmdScr);
         strcat(stCommParm.pCmdLnx, stCommParm.pCmdObj);
         strcat(stCommParm.pCmdLnx, stCommParm.pCmdLib);
-        fprintf(stCommParm.msgout, "Torito LINK -> \"%s\"\n", stCommParm.pCmdLnx);
 
         nRet = system(stCommParm.pCmdLnx);     // invoke GNU ld, the linux linker 
 
-        if (0)
-        {
-            //
-            // check MAP file for data in .BSS section
-            //
-                /*
-                Allocating common symbols
-                Common symbol       size              file
+        fprintf(stCommParm.msgout, "\"%d\" Torito LINK -> %s\n", nRet, stCommParm.pCmdLnx);
 
-                var                 0x1               mod1MSFT.obj
-                var2                0x1               mod2MSFT.obj
-                var3                0x1               mod3MSFT.obj
-                var4                0x1               mod4MSFT.obj
-
-                */
-            FILE* fp = fopen(pMap, "r");
-            char* pBuf = malloc(3 * 1024);
-            char* pVar = &pBuf[1024];
-            char* pObj = &pBuf[2048];
-            char* p;
-            if (NULL == fp)
-                break;
-
-            //
-            // check "Allocating common symbols" line
-            //
-            do
-            {
-                p = fgets(pBuf, 1024, fp);
-                if (0 == strncmp(pBuf, "Allocating common symbols", sizeof("Allocating common symbols") - 1))
-                    break;
-            } while (NULL != p);
-
-            if (NULL == p)
-                break;
-
-            //
-            // check "Common symbol" line
-            //
-            p = fgets(pBuf, 1024, fp);
-            if (p == NULL && 0 == strncmp(pBuf, "Common symbol", sizeof("Common symbol") - 1))
-            {
-                fprintf(stderr, "unknow format line %d\n", __LINE__);
-                break;
-            }
-
-            //
-            // check empty line
-            //
-            p = fgets(pBuf, 1024, fp);
-            if (p == NULL && 0 == strncmp(pBuf, "\n", sizeof("\n") - 1))
-            {
-                fprintf(stderr, "unknow format line %d\n", __LINE__);
-                break;
-            }
-
-            if (1)
-            {
-                //
-                // from now on list all VAR/FILE.OBJ pairs until empty line
-                //
-                bool fBSSWarnDone = 0;
-                do
-                {
-                    int trash;
-                    if ((p = fgets(pBuf, 1024, fp)) == NULL)  //chk EOF
-                        break;
-                    if (p != NULL && 0 == strncmp(pBuf, "\n", sizeof("\n") - 1))
-                        break;
-                    if (0 == fBSSWarnDone)
-                    {
-                        fBSSWarnDone = 1;
-                        fprintf(stCommParm.msgout, "\nFATAL: Uninitialized data in .BSS detected that may crash the program\n");
-                        fprintf(stCommParm.msgout, "         The following variables needs manually set to 0:\n");
-                    }
-                    sscanf(pBuf, "%s %x %s", pVar, &trash, pObj);
-                    fprintf(stCommParm.msgout, "         %s -> %s \n", pVar, pObj);
-                } while (1);
-                if (1 == fBSSWarnDone)
-                    fprintf(stCommParm.msgout, "\n");
-            }
-        }
-        break;//while(fLinuxLd)
-    }
-
-    while (!stCommParm.fLinuxLd)
+    }while (0);//if(stCommParm.fLinuxLd) do
+    
+    //
+    // currently torito-LINK can't invoke Microsoft Link.exe, to bind .EFI and .EXE
+    //
+    if (0 == stCommParm.fLinuxLd)
     {
-        //
-        // original Microsoft (R) LINK.EXE
-        //
-        char* pEntirePath, * pPath;
-        char fLinkExeFound = 0;
-        char* pLinkExe = NULL;
-        char* pCmdWinQuoted = NULL;
-
-        //fprintf(stCommParm.msgout, "%s\n", argv[0]);//debug
-
-        pEntirePath = getenv("path");
-
-        pPath = strtok(pEntirePath, ";");
-
-        while (pPath != NULL)
+        fprintf(stderr, "Torito LINK -- Microsoft (R) LINK.EXE hook for GNU \"ld\"\n  See https://github.com/KilianKegel/torito-C-Library for details.\n");
+        fprintf(stderr, "ERROR: Don't use Torito LINK to bind executable other then Linux x86-64 .ELF\n");
+        fprintf(stderr, "       Remove Torito LINK form the PATH. In Visual Studio remove:\n");
+        fprintf(stderr, "       Project Properties\\\n");
+        fprintf(stderr, "           Configuration Properties\\\n");
+        fprintf(stderr, "               VC++ Directories\\\n");
+        fprintf(stderr, "                   Executable Directories->\"path of Torito LINK\"\n");
+    }
+    if (0)
+    {
+        while (!stCommParm.fLinuxLd)
         {
+            //
+            // original Microsoft (R) LINK.EXE
+            //
+            char* pEntirePath, * pPath;
+            char fLinkExeFound = 0;
+            char* pLinkExe = NULL;
+            char* pCmdWinQuoted = NULL;
+            DWORD dwLastError = 0;
 
-            if (0 == _strnicmp(pPath, argv[0], strlen(pPath)))
-            {   //TODO: argv[0] 
-                //fprintf(stCommParm.msgout, "SKIP: %s\n", pPath);//debug
-            }
-            else
+            //fprintf(stCommParm.msgout, "%s\n", argv[0]);//debug
+
+            pEntirePath = getenv("path");
+
+            pPath = strtok(pEntirePath, ";");
+
+            while (pPath != NULL)
             {
-                FILE* fp;
 
-                pLinkExe = malloc(strlen(pPath) + sizeof("\\link.exe")/* include termination ZERO!!! */);
-
-                strcpy(pLinkExe, pPath);
-                strcat(pLinkExe, "\\linK.EXe");
-
-                fp = fopen(pLinkExe, "rb");
-                if (NULL != fp)
-                {
-                    //
-                    // in this path LINKE.EXE is present
-                    //
-                    //fprintf(stCommParm.msgout, "EXIST: %s\n", pLinkExe);//debug
-                    fclose(fp);
-                    fLinkExeFound = 1;
-                    break;  //while (pPath != NULL)
+                if (0 == _strnicmp(pPath, argv[0], strlen(pPath)))
+                {   //TODO: argv[0] 
+                    //fprintf(stCommParm.msgout, "SKIP: %s\n", pPath);//debug
                 }
                 else
                 {
-                    //
-                    // in this path LINKE.EXE is NOT present
-                    //
-                    //fprintf(stCommParm.msgout, "NOTEXIST: %s - %s\n", pLinkExe, strerror(errno));//debug
+                    FILE* fp;
+
+                    pLinkExe = malloc(strlen(pPath) + sizeof("\\link.exe")/* include termination ZERO!!! */);
+
+                    strcpy(pLinkExe, pPath);
+                    strcat(pLinkExe, "\\LINK.EXE");
+
+                    fp = fopen(pLinkExe, "rb");
+                    if (NULL != fp)
+                    {
+                        //
+                        // in this path LINKE.EXE is present
+                        //
+                        //fprintf(stCommParm.msgout, "EXIST: %s\n", pLinkExe);//debug
+                        fclose(fp);
+                        fLinkExeFound = 1;
+                        break;  //while (pPath != NULL)
+                    }
+                    else
+                    {
+                        //
+                        // in this path LINKE.EXE is NOT present
+                        //
+                        //fprintf(stCommParm.msgout, "NOTEXIST: %s - %s\n", pLinkExe, strerror(errno));//debug
+                    }
+
+                    free(pLinkExe);
+                    pLinkExe = NULL;
+                }
+                pPath = strtok(NULL, ";");
+            }
+
+            if (NULL != pLinkExe)
+            {
+
+                STARTUPINFOA        StartupInfo;
+                PROCESS_INFORMATION ProcessInformation;
+                BOOL fRet;
+                char* pLinkExeQ/*uatated*/ = malloc(strlen(pLinkExe) + EOSSIZE + 2 * sizeof("\""));
+                char* pEnvTrackerLess;
+                size_t sizeEnv = 0;
+                int i;
+                char noenv[] = { 0,0 };
+
+                //if (1)
+                //{
+                //    for (i = 0; NULL != env[i]; i++)
+                //    {
+                //        if (strncmp(env[i], ))
+                //    }
+                //}
+
+                //printf("Hello \"CREATE\"\n");
+
+                memset(&StartupInfo, 0, sizeof(StartupInfo));
+                StartupInfo.cb = sizeof(StartupInfo);
+                memset(&ProcessInformation, 0, sizeof(ProcessInformation));
+
+                strcpy(pLinkExeQ, "\"");
+                strcat(pLinkExeQ, pLinkExe);
+                strcat(pLinkExeQ, "\"");
+
+                fprintf(stCommParm.msgout, "Torito LINK -> %s %s\n", pLinkExeQ, stCommParm.pParmWin);
+
+                fRet = CreateProcessA(
+                    pLinkExe,
+                    stCommParm.pParmWin,
+                    NULL,                   // Process handle not inheritable
+                    NULL,                   // Thread handle not inheritable
+                    FALSE,                  // Set handle inheritance to FALSE
+                    NORMAL_PRIORITY_CLASS /*| CREATE_NEW_CONSOLE /*| CREATE_NEW_PROCESS_GROUP*/, // creation flags
+                    &noenv,                   // Use parent's environment block
+                    NULL,                   // Use parent's starting directory 
+                    &StartupInfo,           // Pointer to STARTUPINFO structure
+                    &ProcessInformation     // Pointer to PROCESS_INFORMATION structure
+                );
+
+
+                if (fRet)
+                {
+                    // Wait until child process exits.
+                    WaitForSingleObject(ProcessInformation.hProcess, INFINITE);
+                }
+                else {
+                    dwLastError = GetLastError();
+                    fprintf(stCommParm.msgout, "LastError -> %08X\n", dwLastError);
                 }
 
-                free(pLinkExe);
-                pLinkExe = NULL;
+                nRet = !fRet;
+
+                if (1 /* TRACKER_INTERMEDIATE */)
+                {
+                    char* pDirTracker = getenv("TRACKER_INTERMEDIATE");
+                    char* pFilepUnsuccessfulbuild = NULL;
+
+                    if (NULL != pDirTracker)
+                    {
+                        pFilepUnsuccessfulbuild = malloc(EOSSIZE + strlen(pDirTracker) + sizeof("Unsuccessfulbuild") + sizeof("\\"));
+                        strcpy(pFilepUnsuccessfulbuild, pDirTracker);
+                        strcat(pFilepUnsuccessfulbuild, "\\unsuccessfulbuild");
+                        remove(pFilepUnsuccessfulbuild);
+                    }
+                }
+
+                if (1 /* TRACKER_RESPONSEFILE */)
+                {
+                    char* pFileTrackerResponse = getenv("TRACKER_RESPONSEFILE");
+
+                    if (NULL != pFileTrackerResponse)
+                    {
+                        FILE* fp;
+                        int c;
+
+                        fp = fopen(pFileTrackerResponse, "r");
+
+                        fprintf(stCommParm.msgout, "TRACKER_RESPONSEFILE-> %c\n", c);
+                        do {
+                            c = fgetc(fp);
+                            if (0xFF != c && 0xFE != c && 0x00 != c)
+                                fprintf(stCommParm.msgout, "%c", c);
+                        } while (EOF != c);
+                        fprintf(stCommParm.msgout, "\n\n");
+                        fclose(fp);
+                        remove(pFileTrackerResponse);
+
+                    }
+
+                }
+
+                if (0)
+                {
+                    pCmdWinQuoted = malloc(sizeof("\"\"") + strlen(pLinkExe) + sizeof("\"") + sizeof("\t") + strlen(stCommParm.pParmWin) + sizeof("\"") + EOSSIZE);
+                    pLinkExe = realloc(pLinkExe, strlen(pLinkExe) + strlen(stCommParm.pParmWin) + EOSSIZE);
+
+                    strcpy(pCmdWinQuoted, "");
+                    strcpy(pCmdWinQuoted, "\"");
+                    strcat(pCmdWinQuoted, pLinkExe);
+                    strcat(pCmdWinQuoted, "\"");
+
+                    //nRet = system(pCmdWinQuoted);
+                    //"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.27.29110\bin\HostX86\x64\linK.EXe" /nologo  /ERRORREPORT:PROMPT @C:\Users\kilia\AppData\Local\Temp\tmp59f7e5dc2b8c493fa6834c277a69f298.rsp /INCREMENTAL:NO /NOLOGO /LIBPATH:..\libraries kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /NODEFAULTLIB /MANIFEST:NO /DEBUG:FULL /PDB:"A:\Visual-ANSI-C-for-UEFI-Shell2\x64\UEFIx86-64 (Torito C Library)\argcv.pdb" /MAP:"A:\Visual-ANSI-C-for-UEFI-Shell2\x64\UEFIx86-64 (Torito C Library)\argcv.map" /MAPINFO:EXPORTS /SUBSYSTEM:EFI_APPLICATION /OPT:REF /OPT:ICF /LTCG:incremental /TLBID:1 /ENTRY:_MainEntryPointShell /DYNAMICBASE:NO /FIXED:NO /NXCOMPAT:NO /MACHINE:X64 ..\libraries\toritoC64R.lib "x64\UEFIx86-64 (Torito C Library)\argcv.obj"
+                    //strcat(pCmdWinQuoted, " /nologo ");
+                    strcat(pCmdWinQuoted, " ");
+                    //strcat(pCmdWinQuoted, "\t");
+
+                    strcat(pCmdWinQuoted, stCommParm.pParmWin);
+
+                    //__debugbreak();
+                    //
+                    // remove trailing blanks
+                    //
+                    if (1)
+                    {
+                        size_t len = strlen(pCmdWinQuoted);
+
+                        while (
+                            0 != len &&
+                            (
+                                '\t' == pCmdWinQuoted[len] ||
+                                '\n' == pCmdWinQuoted[len] ||
+                                '\r' == pCmdWinQuoted[len] ||
+                                '\x00' == pCmdWinQuoted[len] ||
+                                '\x20' == pCmdWinQuoted[len]
+                                )
+                            )
+                        {
+                            len--;
+                        }
+
+                        pCmdWinQuoted[1 + len] = '\0';
+
+                    }
+                    strcat(pCmdWinQuoted, "");
+
+
+                    fprintf(stCommParm.msgout, "\n\nTorito LINK -> %s\n\n", pCmdWinQuoted);
+                    //fprintf(stCommParm.msgout, "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Tools\\MSVC\\14.27.29110\\bin\\HostX86\\x64\\LINK.EXE\" @C:\\Users\\kilia\\AppData\\Local\\Temp\\lnkcmdw.txt");
+                    fflush(stCommParm.msgout);
+
+                    nRet = 0;
+                    fprintf(stCommParm.msgout, "!>>>\n"); fflush(stCommParm.msgout);
+                    nRet = system(pCmdWinQuoted);
+                    fprintf(stCommParm.msgout, "!<<< nRet %d\n", nRet); fflush(stCommParm.msgout);
+                    //nRet = system("\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Tools\\MSVC\\14.27.29110\\bin\\HostX86\\x64\\LINK.EXE\" @C:\\Users\\kilia\\AppData\\Local\\Temp\\lnkcmdw.txt");
+                }
             }
-            pPath = strtok(NULL, ";");
+            else {
+                fprintf(stCommParm.msgout, "Torito LINK -- Microsoft (R) LINK.EXE hook for GNU \"ld\"\n  See https://github.com/KilianKegel/torito-C-Library for details.\n");
+                fprintf(stCommParm.msgout, "ERROR: LINK.EXE not found. Maybe the Microsoft Visual Studio 2019 build environment\n");
+                fprintf(stCommParm.msgout, "       not / or incorrectly installed on this platform.\n\n");
+                nRet = 1;   // return error
+            }
+            fprintf(stCommParm.msgout, "LaSTeRRoR -> %08X; nRet %d\n", dwLastError, nRet);
+            break;//while(!fLinuxLd)
+
         }
-        if (NULL != pLinkExe)
-        {
-            pCmdWinQuoted = malloc(sizeof("\"") + strlen(pLinkExe) + sizeof("\"") + sizeof("\t") + strlen(stCommParm.pParmWin) + sizeof('\0'));
-            pLinkExe = realloc(pLinkExe, strlen(pLinkExe) + strlen(stCommParm.pParmWin) + sizeof('\0'));
-
-            strcpy(pCmdWinQuoted, "\"");
-            strcat(pCmdWinQuoted, pLinkExe);
-            strcat(pCmdWinQuoted, "\"");
-            strcat(pCmdWinQuoted, "\t");
-            strcat(pCmdWinQuoted, stCommParm.pParmWin);
-
-
-            //fprintf(stCommParm.msgout, "line %2d: \"%s\"\n", __LINE__, pCmdWinQuoted);
-
-            nRet = system(pCmdWinQuoted);
-        }
-        else {
-            fprintf(stCommParm.msgout, "Torito LINK -- Microsoft (R) LINK.EXE hook for GNU \"ld\"\n  See https://github.com/KilianKegel/torito-C-Library for details.\n");
-            fprintf(stCommParm.msgout, "ERROR: LINK.EXE not found. Maybe the Microsoft Visual Studio 2019 build environment\n");
-            fprintf(stCommParm.msgout, "       not / or incorrectly installed on this platform.\n\n");
-            nRet = 1;   // return error
-        }
-        break;//while(!fLinuxLd)
-
     }
+    exit(nRet);
     return nRet;
 }
 
@@ -544,21 +653,89 @@ Returns
 Synopsis
     int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER *pstCommParm);
 Description
-    translate LINK.EXE command line parameters to GNU ld command line parameters
-Returns
+    Translate LINK.EXE command line parameters to GNU ld command line parameters.
+    Prepare a command line to invoke Microsoft LINK.EXE too.
+    *pstCommParm structure elements is updated 
 
-    @param[in] char **argv
-    @param[in] char szCmdLine
+Returns
 
     @retval argc
 
 **/
-int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER *pstCommParm) 
+int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER *pstCommParm, bool fCmdFile) 
 {
     int i,j,nRet = 0;
-    for (i = 0; i < xargc; i++) {
+    for (i = (true == fCmdFile ? 0 : 1) /* skip filename */; i < xargc; i++) {
 
-        //fprintf(pstCommParm->msgout, "line %2d->%2d: \"%s\"\n", __LINE__, i, xargv[i]);//debug
+        fprintf(pstCommParm->msgout, "line %2d->%2d, fCmdFile %d: %s\n", __LINE__, i, fCmdFile, xargv[i]);//debug
+
+        //
+        // re-create the original command line to pass it to Microsoft LINK.exe 
+        //
+        if (false == fCmdFile)
+        {
+            bool fCase0, fCase1, fCase2;    //flags
+            size_t orgLen,tmpLen;
+            //pstCommParm->pParmWin = realloc(
+            //    pstCommParm->pParmWin, 
+            //    strlen(xargv[i]) + 
+            //    strlen(pstCommParm->pParmWin) +
+            //    strlen(" ") +       /* separation space */
+            //    2 * strlen("\"") +  /* enclose each parameter in " */
+            //    EOSSIZE);
+            //
+            // enclose path\filennames, containing spaces, into quotation mark
+            //  algorithm:
+            //      0)  check, if the particular argv[i] contains spaces
+            //      1)  check, if a parameter starts with a slash "/" or stroke "-"
+            //      2)  in case of (0) AND (1) check for colon ":"
+            //      3)  in case of (0) AND (1) AND (2) enclose the substring AFTER colon ":" in quotation mark
+            //          finish!
+            //      4)  in case of (0) AND NOT (1) enclose the entire argv[i] in quotation mark
+            //          finish!
+            //      5)  
+
+            orgLen = strlen(pstCommParm->pParmWin);                                // get current length
+            pstCommParm->pParmWin = realloc(
+                pstCommParm->pParmWin,
+                orgLen + strlen(xargv[i]) +
+                EOSSIZE +
+                strlen(" ") +       /* separation space */
+                2 * sizeof('\"')    // even if not needed, allocate space for two additional quotation marks
+            );
+
+            fCase0 = (NULL != strchr(xargv[i], ASCIICHRSPACE));
+            if (fCase0) {
+
+
+                fCase1 = (('/' == xargv[i][0]) || ('-' == xargv[i][0]));
+                if (fCase1) {
+
+                    fCase2 = (NULL != strchr(xargv[i], ':'));
+                    if (fCase2) {
+                        
+                        //__debugbreak();
+                        tmpLen = strcspn(xargv[i], ":");
+                        strncpy(&pstCommParm->pParmWin[orgLen], xargv[i], tmpLen + 1);
+                        pstCommParm->pParmWin[orgLen + tmpLen + 1] = '\0';
+                        strcat(pstCommParm->pParmWin, "\"");
+                        strcat(pstCommParm->pParmWin, &xargv[i][tmpLen + 1]);
+                        strcat(pstCommParm->pParmWin, "\"");
+                    }
+                }
+                else
+                {
+                    // 4)
+                    strcat(pstCommParm->pParmWin, "\"");
+                    strcat(pstCommParm->pParmWin, xargv[i]);
+                    strcat(pstCommParm->pParmWin, "\"");
+                }
+            }
+            else {
+                strcat(pstCommParm->pParmWin, xargv[i]);
+            }
+        }
+        strcat(pstCommParm->pParmWin, " "); /* separation space */
 
         if ('@' == xargv[i][0])
             pstCommParm->pszCmdLineFile = &xargv[i][1];
@@ -809,7 +986,7 @@ int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER *pstCommParm
 Synopsis
     char* Rel2AbsPath(const char* pstrRel, const char *pstrAbs, bool fBack2Slashes, bool fDrv2Mnt);
 Description
-    convert relative path to absolute path and allows substition of drive numbers (a:, B: c:...) with UNIX mount locations (/mnt/a, /mnt/b ...)
+    convert relative path to absolute path and allows substition of drive numbers (a:, B: c:...) with LINUX mount locations (/mnt/a, /mnt/b ...)
 
     @param[in] const char* pRel             -   1) a:\bcd
                                                 2) a:\bcd\..\efg
@@ -834,10 +1011,10 @@ Returns
 char* Rel2AbsPath(const char* pstrRel, const char* pstrAbs, bool fBack2Slashes, bool fDrv2Mnt)
 {
     char* pRet = NULL;
-    char* pAbsPath = calloc(1, 1);
+    //char* pAbsPath = calloc(1, 1);
     size_t SizeAbsPath = 1;
     size_t n;
-    char* pstr = malloc(0);
+    char* pstr = NULL;// malloc(0);
     char* pstrCur, * pstrStart;
 
 
@@ -888,7 +1065,9 @@ char* Rel2AbsPath(const char* pstrRel, const char* pstrAbs, bool fBack2Slashes, 
         // merge RelPath and RootPath, if required
         //
         n = strlen(pstrRel) + sizeof('\\') + strlen(pstrAbs) + sizeof('\\') + EOSSIZE;
+
         pstr = realloc(pstr, n);
+
         strcpy(pstr, pstrAbs);
         n = strlen(pstr);
         if (0 != n)
