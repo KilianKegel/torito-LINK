@@ -299,7 +299,7 @@ Returns
                 //TODO: extract %TEMP% from environment variable
                 //TODO: FILE* fpErr = fopen("%temp%\\wslpresencetest.log", "r");
                 //TODO: int c;
-                fprintf(stderr, "Torito LINK -- Microsoft (R) LINK.EXE hook for GNU \"ld\"\n  See https://github.com/KilianKegel/torito-C-Library for details.\n");
+                fprintf(stderr, "Torito LINK -- Microsoft (R) LINK.EXE hook for GNU \"ld\"\nSee https://github.com/KilianKegel/torito-C-Library for details.\n");
                 fprintf(stderr, "ERROR: WSL, Windows Subsystem for Linux can not be started on this platform.\n");
                 fprintf(stderr, "       Please install WSL2 on this platform or, if is already installed, run as administrator:\n\n");
                 fprintf(stderr, "       \"bcdedit /set hypervisorlaunchtype auto\"\n");
@@ -411,7 +411,7 @@ Returns
     //
     if (0 == stCommParm.fLinuxLd)
     {
-        fprintf(stderr, "Torito LINK -- Microsoft (R) LINK.EXE hook for GNU \"ld\"\n  See https://github.com/KilianKegel/torito-C-Library for details.\n");
+        fprintf(stderr, "Torito LINK -- Microsoft (R) LINK.EXE hook for GNU \"ld\"\nSee https://github.com/KilianKegel/torito-C-Library for details.\n");
         fprintf(stderr, "ERROR: Don't use Torito LINK to bind executable other then Linux x86-64 .ELF\n");
         fprintf(stderr, "       Remove Torito LINK form the PATH. In Visual Studio remove:\n");
         fprintf(stderr, "       Project Properties\\\n");
@@ -419,6 +419,7 @@ Returns
         fprintf(stderr, "               VC++ Directories\\\n");
         fprintf(stderr, "                   Executable Directories->\"path of Torito LINK\"\n");
     }
+
     if (0)
     {
         while (!stCommParm.fLinuxLd)
@@ -534,10 +535,11 @@ Returns
                     dwLastError = GetLastError();
                     fprintf(stCommParm.msgout, "LastError -> %08X\n", dwLastError);
                 }
+                //fprintf(stCommParm.msgout, "\"%d\" Torito LINK -> %s %s\n", fRet, pLinkExe, stCommParm.pCmdLnx);
 
                 nRet = !fRet;
 
-                if (1 /* TRACKER_INTERMEDIATE */)
+                if (0 /* TRACKER_INTERMEDIATE */)
                 {
                     char* pDirTracker = getenv("TRACKER_INTERMEDIATE");
                     char* pFilepUnsuccessfulbuild = NULL;
@@ -551,7 +553,7 @@ Returns
                     }
                 }
 
-                if (1 /* TRACKER_RESPONSEFILE */)
+                if (0 /* TRACKER_RESPONSEFILE */)
                 {
                     char* pFileTrackerResponse = getenv("TRACKER_RESPONSEFILE");
 
@@ -651,7 +653,7 @@ Returns
 /**
 
 Synopsis
-    int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER *pstCommParm);
+    int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER *pstCommParm, bool fCmdFile, bool fCmdFile) );
 Description
     Translate LINK.EXE command line parameters to GNU ld command line parameters.
     Prepare a command line to invoke Microsoft LINK.EXE too.
@@ -662,12 +664,12 @@ Returns
     @retval argc
 
 **/
-int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER *pstCommParm, bool fCmdFile) 
+int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER *pstCommParm, bool fCmdFile/*command file*/) 
 {
     int i,j,nRet = 0;
     for (i = (true == fCmdFile ? 0 : 1) /* skip filename */; i < xargc; i++) {
 
-        fprintf(pstCommParm->msgout, "line %2d->%2d, fCmdFile %d: %s\n", __LINE__, i, fCmdFile, xargv[i]);//debug
+        //fprintf(pstCommParm->msgout, "line %2d->%2d, fCmdFile %d: %s\n", __LINE__, i, fCmdFile, xargv[i]);//debug
 
         //
         // re-create the original command line to pass it to Microsoft LINK.exe 
@@ -675,7 +677,7 @@ int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER *pstCommParm
         if (false == fCmdFile)
         {
             bool fCase0, fCase1, fCase2;    //flags
-            size_t orgLen,tmpLen;
+            size_t orgLen, tmpLen;
             //pstCommParm->pParmWin = realloc(
             //    pstCommParm->pParmWin, 
             //    strlen(xargv[i]) + 
@@ -695,7 +697,7 @@ int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER *pstCommParm
             //          finish!
             //      5)  
 
-            orgLen = strlen(pstCommParm->pParmWin);                                // get current length
+            orgLen = EOSSIZE + strlen(pstCommParm->pParmWin);                                // get current length
             pstCommParm->pParmWin = realloc(
                 pstCommParm->pParmWin,
                 orgLen + strlen(xargv[i]) +
@@ -710,10 +712,9 @@ int ProcessArgs(int xargc, char** xargv, CMDLINE_AND_FILE_PARAMETER *pstCommParm
 
                 fCase1 = (('/' == xargv[i][0]) || ('-' == xargv[i][0]));
                 if (fCase1) {
-
                     fCase2 = (NULL != strchr(xargv[i], ':'));
                     if (fCase2) {
-                        
+
                         //__debugbreak();
                         tmpLen = strcspn(xargv[i], ":");
                         strncpy(&pstCommParm->pParmWin[orgLen], xargv[i], tmpLen + 1);
