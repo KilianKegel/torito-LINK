@@ -18,6 +18,12 @@ This requires that the build machine Is installed With WSL2 (Windows Subsystem L
 
 
 ## Revision history
+### 20210120
+* beta v0.90
+* fixed: link process fails with more than one(1) .OBJ
+* improved debug support: with VS2019 ver 16.8.4 "volatile" for local variables stops
+  code generation behind
+
 ### 20201118
 * alpha v0.51
 * fixed: unstability due To miscalculated buffer allocation

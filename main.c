@@ -87,6 +87,11 @@ static struct _PARMSUBSTTYPE1 {
 };
 
 //
+// externals
+//
+extern volatile int deadloopint;
+
+//
 // protoptypes
 //
 char ld_script[];// GNU ld link script including MSFT specific section sequence for .CRT$...
@@ -144,8 +149,8 @@ Returns
     //
     // initialization
     //
-    memset(&stCommParm, 0, sizeof(stCommParm));
     stCommParm.sizeWin = 1;
+    memset(&stCommParm, 0, sizeof(stCommParm));
     stCommParm.sizeLnx = 1;
     stCommParm.sizeLib = 1;
     stCommParm.sizeScr = 1;
@@ -164,8 +169,7 @@ Returns
     /////////////////////////////////////////////
     if (0)  // 1 - enable DEAD loop for debug purpose only
     {
-        volatile int x = 0;
-        while (0 == x)
+        while (0 == deadloopint)
             ;
     }
 
@@ -249,6 +253,11 @@ Returns
         //
         for (k = 2/* 2 -> skip BOM Byte Order Mark */, l = 0; k < (int)num; l++, k += 2) {
             pzsFCmdLine[l] = pzsFCmdLine[k];
+            
+            if ('\r' == pzsFCmdLine[l] || '\n' == pzsFCmdLine[l])
+                pzsFCmdLine[l] = '\x20';
+
+            //fprintf(stCommParm.msgout, "%c", pzsFCmdLine[l]);   //debug
         }
         pzsFCmdLine[l] = '\0';
 
