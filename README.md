@@ -14,7 +14,7 @@ To work around this limitation, **Torito LINK** is inserted into the tool chain'
 hooks invokations to the original Microsoft LINK.EXE and finally translates/replaces
 LINK.EXE parameters to the equivalent **GNU ld** parameters -- when linking for `/SUBSYSTEM:POSIX`.
 
-This requires that the build machine Is installed With WSL2 (Windows Subsystem Linux) and [**GNU binutils 2.36**](https://sourceware.org/pub/binutils/releases/binutils-2.36.tar.xz).
+This requires that the build machine is installed with WSL2 (Windows Subsystem Linux) and [**GNU binutils 2.36.1**](https://sourceware.org/pub/binutils/releases/binutils-2.36.1.tar.xz).
 
 
 ## Revision history
